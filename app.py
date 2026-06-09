@@ -6,7 +6,7 @@ from tensorflow.keras.models import load_model
 # Load model and scaler
 @st.cache_resource
 def load_model_and_scaler():
-    model = load_model("gru_model.h5")
+    model = load_model("gru_model.h5", compile=False)
     with open("scaler.pkl", "rb") as f:
         scaler = pickle.load(f)
     return model, scaler
@@ -14,34 +14,36 @@ def load_model_and_scaler():
 model, scaler = load_model_and_scaler()
 
 st.title("📈 NIFTY Stock Price Prediction (GRU)")
-st.markdown("**Paste the last 60 closing prices (comma-separated)**")
+st.markdown("""
+**How to use:** Paste the last **60 closing prices** (comma-separated).
+The model will predict the next minute's closing price.
+""")
 
 user_input = st.text_area(
-    "60 Closing Prices:",
+    "Paste 60 closing prices here:",
     placeholder="8250.50, 8251.20, 8249.80, ...",
-    height=140
+    height=150
 )
 
 if user_input:
     try:
-        prices = [float(x.strip()) for x in user_input.split(",") if x.strip()]
+        past_prices = [float(x.strip()) for x in user_input.split(",") if x.strip()]
+        st.write(f"✅ Received {len(past_prices)} prices")
         
-        st.write(f"✅ Received {len(prices)} prices")
+        if len(past_prices) != 60:
+            st.warning(f"⚠️ Please enter exactly 60 prices. You entered {len(past_prices)}.")
         
-        if len(prices) != 60:
-            st.warning(f"⚠️ Please enter exactly 60 prices (you gave {len(prices)})")
-        
-        if st.button("🔮 Predict Next Price", type="primary") and len(prices) == 60:
+        if st.button("🔮 Predict Next Price", type="primary") and len(past_prices) == 60:
             with st.spinner("Predicting..."):
-                array = np.array(prices).reshape(-1, 1)
-                scaled = scaler.transform(array)
-                sequence = scaled.reshape(1, 60, 1).astype('float32')
+                prices_array = np.array(past_prices).reshape(-1, 1)
+                prices_scaled = scaler.transform(prices_array)
+                sequence = prices_scaled.reshape(1, 60, 1).astype('float32')
                 
-                prediction = model.predict(sequence, verbose=0)
-                result = scaler.inverse_transform(prediction)[0][0]
+                pred_scaled = model.predict(sequence, verbose=0)
+                pred_price = scaler.inverse_transform(pred_scaled)[0][0]
                 
-                st.success(f"### Predicted Next Price: **₹{result:,.2f}**")
-                st.line_chart(prices)
+                st.success(f"### Predicted Next Closing Price: **₹{pred_price:,.2f}**")
+                st.line_chart(past_prices)
                 
     except Exception as e:
-        st.error(f"Error: {e}")
+        st.error(f"Error: {str(e)}")
