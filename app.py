@@ -1,69 +1,50 @@
 import streamlit as st
 import numpy as np
-import joblib
+import pickle
 from tensorflow.keras.models import load_model
 
+# Load Model and Scaler
 @st.cache_resource
-def load_assets():
+def load_model_and_scaler():
     model = load_model("gru_model.h5")
-    scaler = joblib.load("scaler.pkl")
+    with open("scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
     return model, scaler
 
-model, scaler = load_assets()
+model, scaler = load_model_and_scaler()
 
 st.title("📈 NIFTY Stock Price Prediction (GRU)")
 st.markdown("""
-This app uses a **GRU** deep learning model trained on
-NIFTY 1-minute data (2015-2025) to predict the next closing price.
-Enter the last **60 closing prices** below.
+**How to use:** Paste the last **60 closing prices** (comma-separated).  
+The model will predict the next minute's closing price.
 """)
 
-st.subheader("Enter Last 60 Closing Prices")
+user_input = st.text_area(
+    "Paste 60 closing prices:",
+    placeholder="8250.50, 8251.20, 8249.80, ... (exactly 60 values)",
+    height=180
+)
 
-input_method = st.radio("Choose input method:",
-    ("Paste numbers (comma-separated)", "Upload CSV"))
-
-past_prices = None
-
-if input_method == "Paste numbers (comma-separated)":
-    user_input = st.text_area(
-        "Paste 60 closing prices here:",
-        placeholder="8250.50, 8251.20, 8249.80, ... (60 values)",
-        height=150
-    )
-    if user_input:
-        try:
-            past_prices = [float(x.strip()) for x in user_input.split(",") if x.strip()]
-        except ValueError:
-            st.error("Please enter valid numbers only.")
-
-else:
-    uploaded_file = st.file_uploader("Upload CSV with a 'close' column", type=["csv"])
-    if uploaded_file is not None:
-        import pandas as pd
-        df_upload = pd.read_csv(uploaded_file)
-        if 'close' in df_upload.columns:
-            past_prices = df_upload['close'].tail(60).tolist()
-        else:
-            st.error("CSV must contain a 'close' column.")
-
-if past_prices is not None and len(past_prices) > 0:
-    st.write(f"Received **{len(past_prices)}** prices.")
-
-    if len(past_prices) != 60:
-        st.warning(f"Please provide exactly 60 prices. You provided {len(past_prices)}.")
-
-    if st.button("Predict Next Price"):
-        try:
-            prices_array = np.array(past_prices).reshape(-1, 1)
-            prices_scaled = scaler.transform(prices_array)
-            sequence = prices_scaled[-60:].reshape(1, 60, 1).astype('float32')
-            pred_scaled = model.predict(sequence, verbose=0)
-            pred_price = scaler.inverse_transform(pred_scaled)
-            st.success(f"### Predicted Next Closing Price: ₹{pred_price[0][0]:,.2f}")
-            st.line_chart(past_prices)
-        except Exception as e:
-            st.error(f"Prediction failed: {e}")
-
-st.markdown("---")
-st.caption("Model: GRU Neural Network | Data: NIFTY 1-Min (2015-2025)")
+if user_input:
+    try:
+        past_prices = [float(x.strip()) for x in user_input.split(",") if x.strip()]
+        
+        st.info(f"✅ Received {len(past_prices)} prices")
+        
+        if len(past_prices) != 60:
+            st.warning(f"⚠️ Model expects exactly 60 prices. You entered {len(past_prices)}.")
+        
+        if st.button("🔮 Predict Next Price", type="primary") and len(past_prices) == 60:
+            with st.spinner("Predicting..."):
+                prices_array = np.array(past_prices).reshape(-1, 1)
+                prices_scaled = scaler.transform(prices_array)
+                sequence = prices_scaled.reshape(1, 60, 1).astype('float32')
+                
+                pred_scaled = model.predict(sequence, verbose=0)
+                pred_price = scaler.inverse_transform(pred_scaled)[0][0]
+                
+                st.success(f"### Predicted Next Closing Price: **₹{pred_price:,.2f}**")
+                st.line_chart(past_prices)
+                
+    except Exception as e:
+        st.error(f"Error: {str(e)}")
