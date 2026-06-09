@@ -1,8 +1,6 @@
-streamlit
-tensorflow
-numpy
-pandas
-scikit-learn
-matplotlib
-yfinance
-joblib
+streamlit==1.29.0
+numpy==1.24.3
+pandas==2.0.3
+joblib==1.3.2
+tensorflow==2.20.0
+scikit-learn==1.6.1  # ← MUST match the version used when saving scaler.pkl
