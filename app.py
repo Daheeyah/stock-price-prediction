@@ -1,63 +1,75 @@
 import streamlit as st
 import numpy as np
-import torch
-import torch.nn as nn
-import pickle
+import pandas as pd
+import yfinance as yf
+import joblib
+from tensorflow.keras.models import load_model
+import matplotlib.pyplot as plt
 
-# Define the model architecture (must match training)
-class GRUModel(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.gru = nn.GRU(input_size=1, hidden_size=32, num_layers=1, batch_first=True)
-        self.dropout = nn.Dropout(0.1)
-        self.fc = nn.Linear(32, 1)
-    
-    def forward(self, x):
-        out, _ = self.gru(x)
-        out = self.dropout(out[:, -1, :])
-        out = self.fc(out)
-        return out
-
-# Load model and scaler
-@st.cache_resource
-def load_assets():
-    model = GRUModel()
-    model.load_state_dict(torch.load("gru_model.pth", weights_only=True, map_location='cpu'))
-    model.eval()
-    with open("scaler.pkl", "rb") as f:
-        scaler = pickle.load(f)
-    return model, scaler
-
-model, scaler = load_assets()
-
-st.title("📈 NIFTY Stock Price Prediction (GRU)")
-st.markdown("**Enter the last 60 closing prices (comma-separated)**")
-
-user_input = st.text_area(
-    "Paste 60 prices here:",
-    placeholder="8250.50, 8251.20, 8249.80, ...",
-    height=150
+st.set_page_config(
+    page_title="Stock Price Prediction",
+    page_icon="📈",
+    layout="wide"
 )
 
-if user_input:
-    try:
-        prices = [float(x.strip()) for x in user_input.split(",") if x.strip()]
-        st.write(f"✅ Received {len(prices)} prices")
-        
-        if len(prices) != 60:
-            st.warning(f"⚠️ Please enter exactly 60 prices. You entered {len(prices)}.")
-        else:
-            if st.button("🔮 Predict Next Price", type="primary"):
-                with st.spinner("Predicting..."):
-                    array = np.array(prices).reshape(-1, 1)
-                    scaled = scaler.transform(array)
-                    sequence = torch.FloatTensor(scaled).reshape(1, 60, 1)
-                    
-                    with torch.no_grad():
-                        pred = model(sequence)
-                    price = scaler.inverse_transform(pred.numpy())[0][0]
-                    
-                    st.success(f"### Predicted Next Closing Price: **₹{price:,.2f}**")
-                    st.line_chart(prices)
-    except Exception as e:
-        st.error(f"Error: {e}")
+st.title("📈 Stock Price Prediction Using GRU")
+
+@st.cache_resource
+def load_artifacts():
+    model = load_model("gru_model.h5")
+    scaler = joblib.load("scaler.pkl")
+    return model, scaler
+
+model, scaler = load_artifacts()
+
+ticker = st.text_input("Enter Stock Symbol", "AAPL")
+
+if st.button("Predict"):
+
+    data = yf.download(ticker, period="2y")
+
+    if data.empty:
+        st.error("Invalid stock symbol.")
+        st.stop()
+
+    close_prices = data[['Close']]
+
+    scaled_data = scaler.transform(close_prices)
+
+    sequence_length = 60
+
+    X = []
+    for i in range(sequence_length, len(scaled_data)):
+        X.append(scaled_data[i-sequence_length:i])
+
+    X = np.array(X)
+
+    predictions = model.predict(X, verbose=0)
+
+    predictions = scaler.inverse_transform(predictions)
+
+    actual = close_prices.iloc[sequence_length:].values
+
+    fig, ax = plt.subplots(figsize=(12,5))
+    ax.plot(actual, label="Actual Price")
+    ax.plot(predictions, label="GRU Prediction")
+    ax.set_title(f"{ticker} Stock Price Prediction")
+    ax.legend()
+
+    st.pyplot(fig)
+
+    from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+    mae = mean_absolute_error(actual, predictions)
+    rmse = np.sqrt(mean_squared_error(actual, predictions))
+    r2 = r2_score(actual, predictions)
+
+    st.subheader("Model Performance")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("MAE", f"{mae:.6f}")
+    col2.metric("RMSE", f"{rmse:.6f}")
+    col3.metric("R²", f"{r2:.6f}")
+
+    st.success("GRU model prediction completed successfully.")
