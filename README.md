@@ -14,8 +14,7 @@ A web application that predicts the next 1-minute closing price of NIFTY using a
 2. Click "Predict Next Price"
 3. Get the predicted next minute price
 
-## Live App
-[Your Streamlit URL will appear here after deployment]
+
 
 ## Technologies Used
 - Python, TensorFlow/Keras
